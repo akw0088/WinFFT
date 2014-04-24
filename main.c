@@ -58,7 +58,7 @@ int fft_psd(const short int *data, int size, float *fft_output, float *max, floa
 void draw_view(HDC hdc, HPEN green_pen, HPEN blue_pen, HPEN red_pen, HPEN yellow_pen, HPEN white_pen, RECT *text_rect, RECT *freq_rect, int input_mode, int draw_bins);
 void draw_waterfall(HDC hdc, HDC hdcMem, int fft_width, int fft_height, float fft_scale);
 float blackman_harris(int n, int N);
-void draw_complex(HDC hdc, HPEN white_pen, HPEN red_pen, HPEN green_pen);
+void draw_complex(HDC hdc, HPEN white_pen, HPEN blue_pen, HPEN red_pen, HPEN green_pen, int draw_flag);
 
 LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
 unsigned int __stdcall stream_thread(void *arg);
@@ -287,8 +287,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 			else
 			{
-				if (draw_flag & TIME)
-					draw_complex(hdc, white_pen, red_pen, green_pen);
+				draw_complex(hdc, white_pen, blue_pen, red_pen, green_pen, draw_flag);
 			}
 			EndPaint(hwnd, &ps);
 		}
@@ -318,40 +317,49 @@ void draw_waterfall(HDC hdc, HDC hdcMem, int fft_width, int fft_height, float ff
 	DeleteObject(hBitmap);
 }
 
-void draw_complex(HDC hdc, HPEN white_pen, HPEN red_pen, HPEN green_pen)
+void draw_complex(HDC hdc, HPEN white_pen, HPEN blue_pen, HPEN red_pen, HPEN green_pen, int draw_flag)
 {
 	HPEN old_pen;
 	int i;
-
 	RECT	coord = {cxClient - cxClient * 0.4, cyClient - cyClient * 0.4, cxClient,  cyClient};
 
-	SelectObject(hdc, GetStockObject(LTGRAY_BRUSH)); 
-	Rectangle(hdc, coord.left, coord.top, coord.right, coord.bottom);
-
-
 	old_pen = SelectObject(hdc, white_pen);
-	// DrawAxis
-	MoveToEx (hdc, coord.left, coord.top + (coord.bottom - coord.top) / 2, NULL);
-	LineTo   (hdc, coord.right, coord.top + (coord.bottom - coord.top) / 2);
-	MoveToEx (hdc, coord.left + (coord.right - coord.left) / 2, coord.top, NULL);
-	LineTo   (hdc, coord.left + (coord.right - coord.left) / 2, coord.bottom);
 
-
-
-	SelectObject(hdc, red_pen);
-
-	for( i = 0; i < NUM; i++)
+	if (draw_flag & TIME)
 	{
-		char xc = apt[i].x;
-		char yc = apt[i].y;
+		SelectObject(hdc, GetStockObject(LTGRAY_BRUSH)); 
+		Rectangle(hdc, coord.left, coord.top, coord.right, coord.bottom);
 
-		int x = (xc / 255.0) * (coord.right - coord.left) + (coord.right - coord.left) * 2;
-		int y = (yc / -255.0) * (coord.bottom - coord.top) + (coord.bottom - coord.top) * 2;
+		// DrawAxis
+		MoveToEx (hdc, coord.left, coord.top + (coord.bottom - coord.top) / 2, NULL);
+		LineTo   (hdc, coord.right, coord.top + (coord.bottom - coord.top) / 2);
+		MoveToEx (hdc, coord.left + (coord.right - coord.left) / 2, coord.top, NULL);
+		LineTo   (hdc, coord.left + (coord.right - coord.left) / 2, coord.bottom);
 
-		Ellipse(hdc, x, y, x + 5, y + 5);
+
+
+		SelectObject(hdc, red_pen);
+		for( i = 0; i < NUM; i++)
+		{
+			char xc = apt[i].x;
+			char yc = apt[i].y;
+
+			//xc = i(t) = Mcos(thi) - real part
+			//yc = q(t) = Msin(thi) - complex part
+			int i = (xc / 255.0) * (coord.right - coord.left) + (coord.right - coord.left) * 2;
+			int q = (yc / -255.0) * (coord.bottom - coord.top) + (coord.bottom - coord.top) * 2;
+
+			Ellipse(hdc, i, q, i + 5, q + 5);
+		}
 	}
 
+	if (draw_flag & FREQ)
+	{
+		SelectObject(hdc, blue_pen);
+		Polyline(hdc, apt_fft, NUM);
+	}
 	SelectObject(hdc, old_pen);
+
 }
 
 void draw_view(HDC hdc, HPEN green_pen, HPEN blue_pen, HPEN red_pen, HPEN yellow_pen, HPEN white_pen, RECT *text_rect, RECT *freq_rect, int input_mode, int draw_flag)
@@ -491,6 +499,13 @@ void ProcessNetBuffer(char *data, int length)
 		int index = 0;
 
 		index = (fft_output[i + FFT_OFFSET] / (4 * avg)) * 18;
+
+		apt_fft[i].x = (i + FFT_OFFSET) * cxClient / ((length / 2) * FFT_SCALE);
+
+		if (log_scale)
+			apt_fft[i].y = cyClient - (int)(20 * log(fft_output[i + FFT_OFFSET]));
+		else
+			apt_fft[i].y = cyClient - (int)(fft_output[i + FFT_OFFSET] / (4 * avg)) *  0.25 * cyClient;
 
 		if (index < 0)
 			index = 0;
